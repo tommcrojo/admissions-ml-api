@@ -86,28 +86,5 @@ def predict(applicant: ApplicantInput):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/predict/batch")
-async def predict_batch(file: UploadFile = File(...)):
-    try:
-        # Read CSV
-        df = pd.read_csv(file.file)
-        
-        # Apply same preprocessing as single prediction
-        # ... (feature engineering code)
-        
-        # Predict
-        probabilities = model.predict_proba(X)[:, 1]
-        predictions = ["admitido" if p >= 0.5 else "rechazado" for p in probabilities]
-        
-        # Add to dataframe
-        df["prediction"] = predictions
-        df["probability"] = probabilities
-        
-        # Return as JSON
-        return df.to_dict(orient="records")
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
