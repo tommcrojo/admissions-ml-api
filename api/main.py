@@ -1,10 +1,14 @@
-# File: api/main.py
+"""API REST para predicción de admisiones universitarias usando ML.
 
-from fastapi import FastAPI, HTTPException, File, UploadFile
+Este módulo proporciona endpoints para predecir la probabilidad de admisión
+de estudiantes basándose en características demográficas y académicas.
+"""
+
+from typing import Dict, Any
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 import joblib
 import pandas as pd
-from typing import List
 import uvicorn
 
 app = FastAPI(
@@ -14,7 +18,7 @@ app = FastAPI(
 )
 
 # Load model at startup
-model = joblib.load("models/admission_model.pkl")
+model = joblib.load("models/rf_model.pkl")
 
 # Pydantic schemas
 class ApplicantInput(BaseModel):
@@ -43,15 +47,38 @@ class PredictionOutput(BaseModel):
 
 # Endpoints
 @app.get("/")
-def root():
+def root() -> Dict[str, str]:
+    """Endpoint raíz que confirma que la API está activa.
+
+    Returns:
+        Dict con mensaje de bienvenida y estado del servicio.
+    """
     return {"message": "Admissions Scoring API", "status": "active"}
 
 @app.get("/health")
-def health_check():
+def health_check() -> Dict[str, Any]:
+    """Verifica el estado de salud de la API y del modelo ML.
+
+    Returns:
+        Dict con el estado del servicio y confirmación de carga del modelo.
+    """
     return {"status": "healthy", "model_loaded": model is not None}
 
 @app.post("/predict", response_model=PredictionOutput)
-def predict(applicant: ApplicantInput):
+def predict(applicant: ApplicantInput) -> PredictionOutput:
+    """Predice la probabilidad de admisión de un solicitante.
+
+    Args:
+        applicant: Datos del solicitante incluyendo edad, nota media,
+                  país de nacimiento, programa solicitado y solicitud de beca.
+
+    Returns:
+        PredictionOutput con la predicción (admitido/rechazado),
+        probabilidad y nivel de confianza.
+
+    Raises:
+        HTTPException: Si ocurre un error durante la predicción.
+    """
     try:
         # Preprocess input
         df = pd.DataFrame([applicant.dict()])
