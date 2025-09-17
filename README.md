@@ -1,204 +1,231 @@
-# Admissions ML API
+# Admissions Data Engineering Pipeline
 
+![PySpark](https://img.shields.io/badge/PySpark-3.5.0-E25A1C.svg)
+![Databricks](https://img.shields.io/badge/Databricks-Platform-FF3621.svg)
 ![Python](https://img.shields.io/badge/python-3.9+-blue.svg)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.104.1-009688.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
-API REST de scoring de admisiones universitarias basada en Machine Learning. Predice la probabilidad de admisión de candidatos utilizando un modelo de Random Forest entrenado con datos históricos de estudiantes.
+Data engineering pipeline for university admissions data using Databricks, PySpark, and the medallion architecture (Bronze → Silver → Gold).
 
-## 🎯 Visión General
+## 🎯 Overview
 
-Este proyecto proporciona un servicio de inferencia ML para evaluar solicitudes de admisión universitaria en tiempo real. El sistema procesa características demográficas y académicas de los solicitantes y devuelve predicciones con niveles de confianza asociados.
+This project demonstrates a production-ready data pipeline that transforms raw university admissions data into ML-ready features. The focus is on **data engineering practices** including data quality, feature engineering, and scalable processing using PySpark on Databricks.
 
-**Casos de uso:**
-- Evaluación automatizada de candidatos
-- Priorización de solicitudes con alta probabilidad de admisión
-- Análisis de patrones de admisión
+The ML model and inference API serve as downstream consumers of the processed data, showcasing how data engineering enables analytics and machine learning.
 
-## 📊 Arquitectura del Pipeline de Datos
+## 📊 Architecture
 
 ```
-┌─────────────────┐      ┌──────────────────┐      ┌─────────────────┐
-│  Datos Crudos   │ ───> │  Entrenamiento   │ ───> │ Modelo Guardado │
-│  (CSV 125K)     │      │  RandomForest    │      │  (rf_model.pkl) │
-└─────────────────┘      └──────────────────┘      └─────────────────┘
-                                                              │
-                                                              ▼
-┌─────────────────┐      ┌──────────────────┐      ┌─────────────────┐
-│   Respuesta     │ <─── │   Inferencia     │ <─── │  POST /predict  │
-│  JSON (score)   │      │  Feature Eng.    │      │  (datos nuevos) │
-└─────────────────┘      └──────────────────┘      └─────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           DATABRICKS PLATFORM                           │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌──────────────┐      ┌──────────────┐      ┌──────────────┐        │
+│  │    BRONZE    │      │    SILVER    │      │     GOLD     │        │
+│  │  Raw Data    │ ───> │   Cleaned    │ ───> │  ML Features │        │
+│  │              │      │ + Features   │      │              │        │
+│  └──────────────┘      └──────────────┘      └──────────────┘        │
+│         │                     │                     │                │
+│         │                     │                     │                │
+│    CSV Ingestion        Feature Engineering    Final Selection      │
+│    Raw Storage          Normalization           ML-Ready              │
+│                         Encoding                                      │
+│                                                                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│                          CONSUMERS                                      │
+│                                                                         │
+│  ┌──────────────┐                        ┌──────────────┐             │
+│  │ ML Training  │                        │  Inference   │             │
+│  │  (sklearn)   │                        │  API (FastAPI)│             │
+│  └──────────────┘                        └──────────────┘             │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Flujo de Datos
+## 🔧 Pipeline Stages
 
-1. **Ingesta**: Recepción de datos del candidato vía API REST (JSON)
-2. **Transformación**: Feature engineering (normalización de notas, codificación de categorías)
-3. **Inferencia**: Predicción usando modelo pre-entrenado (Random Forest)
-4. **Output**: Respuesta estructurada con predicción, probabilidad y confianza
+### Bronze Layer: Raw Data Ingestion
 
-[PLACEHOLDER: Insertar Diagrama de Flujo de Datos o Captura de Pantalla]
+**Notebook:** `00_load_data.py`
 
-## 🛠️ Tech Stack
+**Purpose:** Load raw CSV data from external sources into the data lakehouse.
 
-| Categoría | Tecnologías |
-|-----------|------------|
-| **Framework Web** | FastAPI, Uvicorn |
-| **ML** | scikit-learn, joblib |
-| **Procesamiento** | pandas, numpy |
-| **Validación** | Pydantic v2 |
-| **Testing** | pytest, httpx |
-| **Containerización** | Docker |
+**Operations:**
+- CSV file reading with schema inference
+- Data validation and initial quality checks
+- Storage in `bronze.admissions_raw` table
 
-## 🚀 Configuración Local
+**Source Schema:**
+| Column | Type | Description |
+|--------|------|-------------|
+| dni | int | Student identifier |
+| nombre | string | Student name |
+| edad | int | Age |
+| nota_acceso | double | Access exam grade (0-10) |
+| rama_bachillerato | string | High school track |
+| provincia | string | Province |
+| es_extranjero | boolean | International student |
+| modalidad | string | Study modality |
+| programa_elegido | string | Chosen program |
+| ano_ingreso | int | Year of entry |
+| creditos_primera_matricula | int | Credits enrolled |
+| exito_academico | int | Academic success (target) |
 
-### Prerrequisitos
+### Silver Layer: Data Cleaning & Feature Engineering
 
-- Python 3.9 o superior
-- pip o virtualenv
+**Notebook:** `01_bronze_to_silver.py`
 
-### Instalación
+**Purpose:** Transform raw data into clean, feature-enriched data ready for analysis.
 
-1. Clonar el repositorio:
+**Feature Transformations:**
+
+| Feature | Formula | Rationale |
+|---------|---------|-----------|
+| `nota_normalizada` | `(nota_acceso - 5.0) / 5.0` | Normalize 0-10 scale to 0-1 |
+| `rama_ciencias` | `IF(rama = "Ciencias", 1, 0)` | One-hot encoding |
+| `rama_sociales` | `IF(rama = "Ciencias Sociales", 1, 0)` | One-hot encoding |
+| `rama_ingenieria` | `IF(rama = "Ingeniería", 1, 0)` | One-hot encoding |
+| `es_murcia` | `IF(provincia = "Murcia", 1, 0)` | Regional indicator |
+| `es_online` | `IF(modalidad = "Online", 1, 0)` | Modality indicator |
+| `creditos_ratio` | `creditos / 60.0` | Load relative to full-time |
+
+**Output:** `silver.admissions_clean` table
+
+### Gold Layer: ML-Ready Features
+
+**Notebook:** `02_silver_to_gold.py`
+
+**Purpose:** Select and format final features optimized for machine learning.
+
+**Final Feature Set:**
+- Identifier: `dni`, `programa_elegido`
+- Target: `exito_academico`
+- Numerical features: `nota_normalizada`, `edad`, `creditos_ratio`
+- Encoded features: `rama_ciencias`, `rama_sociales`, `rama_ingenieria`, `es_murcia`, `es_online`, `es_extranjero`
+
+**Output:** `gold.ml_features` table
+
+## 📁 Project Structure
+
+```
+admissions-ml-api/
+├── preprocessing/           # PySpark transformation modules
+│   ├── __init__.py         # Pipeline orchestration
+│   ├── bronze.py           # Raw data ingestion
+│   ├── silver.py           # Cleaning & feature engineering
+│   ├── gold.py             # ML-ready features
+│   └── utils.py            # Utility functions
+├── notebooks/              # Databricks notebooks (reference)
+│   ├── 00_load_data.py
+│   ├── 01_bronze_to_silver.py
+│   ├── 02_silver_to_gold.py
+│   └── 03_train_model.py
+├── api/                    # Inference API (consumes gold layer)
+│   └── main.py
+├── models/                 # Trained models (artifacts)
+│   ├── rf_model.pkl
+│   └── programas.pkl
+├── docs/                   # Documentation
+├── tests/                  # Tests
+├── Dockerfile
+├── requirements.txt
+└── README.md
+```
+
+## 🚀 Tech Stack
+
+| Category | Technologies |
+|----------|-------------|
+| **Platform** | Databricks, Unity Catalog |
+| **Processing** | PySpark, Spark SQL |
+| **Storage** | Delta Lake, Volumes |
+| **ML** | scikit-learn |
+| **API** | FastAPI |
+| **Inference** | joblib |
+| **Testing** | pytest |
+
+## 📝 Usage
+
+### Running the Pipeline in Databricks
+
+1. **Bronze Layer**
+```python
+from preprocessing import load_bronze, save_bronze
+
+# Load and store raw data
+df_bronze = load_bronze(spark)
+save_bronze(spark, df_bronze)
+```
+
+2. **Silver Layer**
+```python
+from preprocessing import transform_bronze_to_silver, save_silver
+
+# Transform and store cleaned data
+df_bronze = spark.table("bronze.admissions_raw")
+df_silver = transform_bronze_to_silver(df_bronze)
+save_silver(spark, df_silver)
+```
+
+3. **Gold Layer**
+```python
+from preprocessing import transform_silver_to_gold, save_gold
+
+# Transform and store ML features
+df_silver = spark.table("silver.admissions_clean")
+df_gold = transform_silver_to_gold(df_silver)
+save_gold(spark, df_gold)
+```
+
+### Running the Inference API
 
 ```bash
-git clone https://github.com/tommcrojo/admissions-ml-private.git
-cd admissions-ml-private
-```
-
-2. Crear y activar entorno virtual:
-
-```bash
-python -m venv venv
-source venv/bin/activate  # En Windows: venv\Scripts\activate
-```
-
-3. Instalar dependencias:
-
-```bash
-pip install -r requirements.txt
-```
-
-### Ejecución con Python
-
-```bash
+# Run the API (consumes preprocessed data)
 python -m uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
-```
 
-### Ejecución con Docker
-
-```bash
+# Or with Docker
 docker build -t admissions-api .
 docker run -p 8000:8000 admissions-api
 ```
 
-La API estará disponible en `http://localhost:8000`
+## 📊 Data Quality Considerations
 
-## 📝 Uso
+### Bronze Layer
+- Schema validation on CSV ingestion
+- Handle missing values and nulls
+- Record data lineage (source, timestamp)
 
-### Endpoints Disponibles
+### Silver Layer
+- Feature scaling consistency
+- Encoding completeness checks
+- Distribution validation for numerical features
 
-#### `GET /health`
-Verifica el estado del servicio y la carga del modelo.
+### Gold Layer
+- Final schema validation before export
+- Feature correlation analysis
+- Target variable balance check
 
-```bash
-curl http://localhost:8000/health
-```
+## 🔍 Key Data Engineering Concepts
 
-**Respuesta:**
-```json
-{
-  "status": "healthy",
-  "model_loaded": true
-}
-```
+**Medallion Architecture:**
+- Progressive data quality improvement across layers
+- Isolation of concerns (ingest → clean → serve)
+- Independent layer maintenance and updates
 
-#### `POST /predict`
-Realiza una predicción de admisión.
+**Feature Engineering:**
+- Reusable transformation logic
+- Versioned feature definitions
+- Consistent encoding across training and inference
 
-```bash
-curl -X POST "http://localhost:8000/predict" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "edad": 22,
-    "nota_media": 8.5,
-    "pais_nacimiento": "España",
-    "programa": "Ingeniería Informática",
-    "solicita_beca": true
-  }'
-```
+**Scalability:**
+- PySpark handles 125K+ records efficiently
+- Delta Lake provides ACID transactions
+- Incremental processing capabilities
 
-**Respuesta:**
-```json
-{
-  "prediction": "admitido",
-  "probability": 0.847,
-  "confidence": "high",
-  "model_version": "1.0.0"
-}
-```
+## 📄 License
 
-### Documentación Interactiva
+MIT License - See [LICENSE](LICENSE) for details
 
-FastAPI genera documentación automática:
-
-- **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
-
-## 🧪 Testing
-
-Ejecutar tests unitarios:
-
-```bash
-pytest tests/ -v
-```
-
-Ejecutar con cobertura:
-
-```bash
-pytest tests/ --cov=api --cov-report=html
-```
-
-## 📂 Estructura del Proyecto
-
-```
-admissions-ml-private/
-├── api/
-│   └── main.py              # Endpoints FastAPI y lógica de predicción
-├── models/
-│   ├── rf_model.pkl         # Modelo Random Forest serializado
-│   └── programas.pkl        # Mapeo de programas académicos
-├── tests/
-│   └── test_api.py          # Tests unitarios
-├── data/
-│   └── raw/                 # Datos de entrenamiento (no en producción)
-├── Dockerfile               # Configuración de containerización
-├── requirements.txt         # Dependencias Python
-└── README.md
-```
-
-## 🔧 Consideraciones de Producción
-
-### Escalabilidad
-- Implementar caching de predicciones frecuentes (Redis)
-- Usar workers de Uvicorn para alta concurrencia
-- Considerar despliegue con Kubernetes para auto-scaling
-
-### Monitoreo
-- Logging estructurado de todas las predicciones
-- Métricas de latencia y throughput (Prometheus)
-- Alertas de drift del modelo
-
-### Seguridad
-- Autenticación API (JWT/OAuth2)
-- Rate limiting por IP
-- Validación estricta de inputs
-
-## 📄 Licencia
-
-Este proyecto está licenciado bajo la licencia MIT. Ver el archivo `LICENSE` para más detalles.
-
-## 👤 Autor
+## 👤 Author
 
 **Tomás Campoy Rojo**
 - GitHub: [@tommcrojo](https://github.com/tommcrojo)
